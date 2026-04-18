@@ -35,7 +35,7 @@ const CASHES = [
   {sym:'BYN', name:'Белорусский рубль'},
 ];
 
-const COLORS = ['#00d4c0','#f59e0b','#7b86f5','#f87171','#4ade80','#c084fc','#fb923c','#38bdf8','#a3e635','#e879f9','#facc15','#2dd4bf'];
+const COLORS = ['#C40361','#8C0286','#6E022F','#d972ff','#f59e0b','#7b86f5','#22d3a4','#ff4f77','#facc15','#c084fc','#38bdf8','#a3e635'];
 
 // ════════════════════════════════════════════
 //  STATE
@@ -255,7 +255,7 @@ function renderPf(hs, st) {
   const donutCard = `<div class="card"><div class="card-ttl">Структура портфеля</div>
     <div class="chart-wrap"><canvas id="donutC"></canvas></div></div>`;
 
-  const topRows = hs.slice(0,6).map(h=>`
+  const topRows = hs.slice(0,8).map(h=>`
     <div class="asset-row">
       <div class="ai ${h.type}">${h.sym.slice(0,3)}</div>
       <div class="ai-info"><div class="ai-name">${h.name}</div>
@@ -266,7 +266,9 @@ function renderPf(hs, st) {
 
   const topCard = `<div class="card"><div class="card-ttl">Позиции</div>${topRows}</div>`;
 
-  return statCards + allocCard + donutCard + topCard;
+  return statCards
+    + `<div class="pf-grid">${allocCard}${donutCard}</div>`
+    + topCard;
 }
 
 function drawPfCharts(hs) {
@@ -280,10 +282,14 @@ function drawPfCharts(hs) {
       labels: top.map(h=>h.sym),
       datasets:[{data: top.map(h=>h.cvu??0), backgroundColor: top.map((_,i)=>COLORS[i%COLORS.length]), borderWidth:0, hoverOffset:4}]
     },
-    options:{responsive:true,maintainAspectRatio:false,cutout:'66%',
+    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',
       plugins:{
-        legend:{position:'right',labels:{color:'#7a96b0',font:{family:'JetBrains Mono',size:10},padding:8,boxWidth:8,usePointStyle:true}},
-        tooltip:{callbacks:{label:ctx=>` ${fR((ctx.parsed??0)*(S.usdRub||90))}`},bodyFont:{family:'JetBrains Mono'}}
+        legend:{position:'right',labels:{color:'#c6a8e6',font:{family:'JetBrains Mono',size:11},padding:10,boxWidth:10,usePointStyle:true}},
+        tooltip:{
+          backgroundColor:'#1a0433',borderColor:'rgba(196,3,97,.45)',borderWidth:1,
+          titleColor:'#f4eaff',bodyColor:'#c6a8e6',padding:12,cornerRadius:10,
+          callbacks:{label:ctx=>` ${fR((ctx.parsed??0)*(S.usdRub||90))}`},bodyFont:{family:'JetBrains Mono'}
+        }
       }}
   });
 }
@@ -376,15 +382,22 @@ function drawAnaCharts(hs, st) {
       type:'bar',
       data:{labels:srt.map(h=>h.sym), datasets:[{
         data: srt.map(h=>h.pnlR??0),
-        backgroundColor: srt.map(h=>(h.pnlR??0)>=0?'rgba(0,196,122,.55)':'rgba(255,61,92,.55)'),
-        borderColor:      srt.map(h=>(h.pnlR??0)>=0?'#00c47a':'#ff3d5c'),
-        borderWidth:1, borderRadius:4
+        backgroundColor: srt.map(h=>(h.pnlR??0)>=0?'rgba(34,211,164,.55)':'rgba(255,79,119,.55)'),
+        borderColor:      srt.map(h=>(h.pnlR??0)>=0?'#22d3a4':'#ff4f77'),
+        borderWidth:1, borderRadius:6
       }]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${fR(ctx.parsed.y)}`},bodyFont:{family:'JetBrains Mono'}}},
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#1a0433',borderColor:'rgba(196,3,97,.45)',borderWidth:1,
+            titleColor:'#f4eaff',bodyColor:'#c6a8e6',padding:12,cornerRadius:10,
+            callbacks:{label:ctx=>` ${fR(ctx.parsed.y)}`},bodyFont:{family:'JetBrains Mono'}
+          }
+        },
         scales:{
-          x:{ticks:{color:'#7a96b0',font:{family:'JetBrains Mono',size:10}},grid:{color:'#1c2a3a'}},
-          y:{ticks:{color:'#7a96b0',font:{family:'JetBrains Mono',size:10},callback:v=>fR(v)},grid:{color:'#1c2a3a'}}
+          x:{ticks:{color:'#c6a8e6',font:{family:'JetBrains Mono',size:11}},grid:{color:'rgba(140,2,134,.18)'}},
+          y:{ticks:{color:'#c6a8e6',font:{family:'JetBrains Mono',size:11},callback:v=>fR(v)},grid:{color:'rgba(140,2,134,.18)'}}
         }}
     });
   }
@@ -398,10 +411,14 @@ function drawAnaCharts(hs, st) {
         backgroundColor: hs.map((_,i)=>COLORS[i%COLORS.length]),
         borderWidth:0
       }]},
-      options:{responsive:true,maintainAspectRatio:false,cutout:'62%',
+      options:{responsive:true,maintainAspectRatio:false,cutout:'66%',
         plugins:{
-          legend:{position:'right',labels:{color:'#7a96b0',font:{family:'JetBrains Mono',size:10},boxWidth:8,padding:8}},
-          tooltip:{callbacks:{label:ctx=>` ${fR(ctx.parsed)}`},bodyFont:{family:'JetBrains Mono'}}
+          legend:{position:'right',labels:{color:'#c6a8e6',font:{family:'JetBrains Mono',size:11},boxWidth:10,padding:10,usePointStyle:true}},
+          tooltip:{
+            backgroundColor:'#1a0433',borderColor:'rgba(196,3,97,.45)',borderWidth:1,
+            titleColor:'#f4eaff',bodyColor:'#c6a8e6',padding:12,cornerRadius:10,
+            callbacks:{label:ctx=>` ${fR(ctx.parsed)}`},bodyFont:{family:'JetBrains Mono'}
+          }
         }}
     });
   }
