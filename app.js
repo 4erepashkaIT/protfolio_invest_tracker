@@ -45,6 +45,7 @@ const S = {
   prices: {},          // {SYM: {usd, ch24, ts}}
   usdRub: null,
   tab:    'pf',
+  anaPeriod: 6,
   form: {op:'buy', type:'crypto', sym:'', name:'', geckoId:''},
 };
 const charts = {};
@@ -336,6 +337,87 @@ function renderTx() {
     </div>`).join('');
 }
 
+// ─── PORTFOLIO DYNAMICS ───
+function calcPortfolioHistory(periodMonths) {
+  if (!S.txs.length) return { labels: [], values: [], pct: null };
+  const rub = S.usdRub || 90;
+  const now = new Date();
+  now.setHours(23, 59, 59, 999);
+  const periodMs = periodMonths * 30 * 24 * 60 * 60 * 1000;
+  const periodStart = new Date(now.getTime() - periodMs);
+  const sorted = [...S.txs].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const firstDate = new Date(sorted[0].date);
+  const effectiveStart = firstDate > periodStart ? firstDate : periodStart;
+
+  // Price timeline per asset: transaction prices + current price as endpoints
+  const assetPrices = {};
+  for (const tx of sorted) {
+    if (!assetPrices[tx.sym]) assetPrices[tx.sym] = [];
+    const txDate = new Date(tx.date);
+    if (!assetPrices[tx.sym].find(p => p.date.getTime() === txDate.getTime()))
+      assetPrices[tx.sym].push({ date: txDate, price: tx.priceUsd });
+  }
+  for (const sym of Object.keys(assetPrices)) {
+    if (S.prices[sym]?.usd) assetPrices[sym].push({ date: new Date(now), price: S.prices[sym].usd });
+    assetPrices[sym].sort((a, b) => a.date - b.date);
+  }
+
+  function getPriceAt(sym, date) {
+    const prices = assetPrices[sym];
+    if (!prices?.length) return null;
+    let prev = null;
+    for (const p of prices) {
+      if (p.date <= date) { prev = p; continue; }
+      if (!prev) return p.price;
+      const t = (date - prev.date) / (p.date - prev.date);
+      return prev.price + t * (p.price - prev.price);
+    }
+    return prev?.price ?? null;
+  }
+
+  function getValueAt(date) {
+    const holdings = {};
+    for (const tx of sorted) {
+      if (new Date(tx.date) > date) break;
+      if (!holdings[tx.sym]) holdings[tx.sym] = 0;
+      holdings[tx.sym] += tx.op === 'buy' ? tx.qty : -tx.qty;
+    }
+    let val = 0;
+    for (const [sym, qty] of Object.entries(holdings)) {
+      if (qty <= 1e-9) continue;
+      const price = getPriceAt(sym, date);
+      if (price !== null) val += qty * price * rub;
+    }
+    return val;
+  }
+
+  const totalDays = Math.ceil((now - effectiveStart) / (24 * 60 * 60 * 1000));
+  const step = Math.max(1, Math.floor(totalDays / 60));
+  const labels = [], values = [];
+
+  for (let i = 0; i <= totalDays; i += step) {
+    const date = new Date(effectiveStart.getTime() + i * 24 * 60 * 60 * 1000);
+    if (date > now) break;
+    labels.push(date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }));
+    values.push(Math.round(getValueAt(date)));
+  }
+  const todayLbl = now.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+  if (labels[labels.length - 1] !== todayLbl) {
+    labels.push(todayLbl);
+    values.push(Math.round(getValueAt(now)));
+  }
+
+  const firstNonZero = values.find(v => v > 0) || 0;
+  const lastVal = values[values.length - 1] || 0;
+  const pct = firstNonZero > 0 ? ((lastVal - firstNonZero) / firstNonZero) * 100 : null;
+  return { labels, values, pct };
+}
+
+function setAnaPeriod(m) {
+  S.anaPeriod = m;
+  render();
+}
+
 // ─── ANALYTICS TAB ───
 function renderAna(hs, st) {
   if (!hs.length) return empty('📈','Нет данных','Добавьте сделки для аналитики');
@@ -364,16 +446,96 @@ function renderAna(hs, st) {
       <div class="mc-sub">сумма покупок</div></div>
   </div>`;
 
+  const periods = [1, 3, 6, 12];
+  const dynCard = `<div class="card">
+    <div class="card-ttl" style="justify-content:space-between">
+      Динамика портфеля
+      <div style="display:flex;gap:6px">
+        ${periods.map(m=>`<button class="period-btn${S.anaPeriod===m?' on':''}" onclick="setAnaPeriod(${m})">${m===12?'1Y':m+'M'}</button>`).join('')}
+      </div>
+    </div>
+    <div id="dynPct" class="dyn-pct">—</div>
+    <div id="dynPeriodLbl" class="dyn-period-lbl"></div>
+    <div class="chart-wrap" style="height:280px"><canvas id="dynC"></canvas></div>
+  </div>`;
+
   const barCard = `<div class="card"><div class="card-ttl">P&L по активам</div>
     <div class="chart-wrap"><canvas id="barC"></canvas></div></div>`;
   const pieCard = `<div class="card"><div class="card-ttl">Доля в портфеле</div>
     <div class="chart-wrap"><canvas id="pieC"></canvas></div></div>`;
 
-  return metrics + barCard + pieCard;
+  return metrics + dynCard + barCard + pieCard;
+}
+
+function drawDynChart() {
+  if (charts.dyn) { charts.dyn.destroy(); charts.dyn = null; }
+  const c = document.getElementById('dynC');
+  if (!c) return;
+
+  const { labels, values, pct } = calcPortfolioHistory(S.anaPeriod);
+
+  const pctEl = document.getElementById('dynPct');
+  const lblEl = document.getElementById('dynPeriodLbl');
+  if (pctEl) {
+    if (pct !== null) {
+      pctEl.className = 'dyn-pct' + (pct >= 0 ? '' : ' loss');
+      pctEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2).replace('.', ',') + '%';
+    } else {
+      pctEl.className = 'dyn-pct';
+      pctEl.textContent = '—';
+    }
+  }
+  if (lblEl) {
+    const lbl = { 1:'за 1 месяц', 3:'за 3 месяца', 6:'за 6 месяцев', 12:'за год' }[S.anaPeriod] || '';
+    lblEl.textContent = lbl;
+  }
+  if (!values.length) return;
+
+  charts.dyn = new Chart(c, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: '#7b86f5',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: '#7b86f5',
+        tension: 0.4,
+        fill: true,
+        backgroundColor: ctx => {
+          const grad = ctx.chart.canvas.getContext('2d').createLinearGradient(0, 0, 0, ctx.chart.canvas.height);
+          grad.addColorStop(0, 'rgba(123,134,245,0.45)');
+          grad.addColorStop(1, 'rgba(123,134,245,0.02)');
+          return grad;
+        }
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a0433', borderColor: 'rgba(196,3,97,.45)', borderWidth: 1,
+          titleColor: '#f4eaff', bodyColor: '#c6a8e6', padding: 12, cornerRadius: 10,
+          callbacks: { label: ctx => ` ${fR(ctx.parsed.y)}` },
+          bodyFont: { family: 'JetBrains Mono' }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#c6a8e6', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 }, grid: { color: 'rgba(140,2,134,.12)' } },
+        y: { ticks: { color: '#c6a8e6', font: { family: 'JetBrains Mono', size: 10 }, callback: v => fR(v) }, grid: { color: 'rgba(140,2,134,.12)' } }
+      }
+    }
+  });
 }
 
 function drawAnaCharts(hs, st) {
-  ['bar','pie'].forEach(k=>{ if(charts[k]){charts[k].destroy();charts[k]=null;} });
+  ['bar','pie','dyn'].forEach(k=>{ if(charts[k]){charts[k].destroy();charts[k]=null;} });
+  drawDynChart();
 
   const bar = document.getElementById('barC');
   if (bar && hs.length) {
@@ -580,10 +742,17 @@ function initSelects() {
   ch.innerHTML = '<option value="">— выберите —</option>' + CASHES.map(c=>`<option value="${c.sym}">${c.name} (${c.sym})</option>`).join('');
 }
 
+function updateHdrOffset() {
+  const h = document.querySelector('.hdr');
+  if (h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight + 'px');
+}
+
 async function init() {
   load();
   initSelects();
   render();
+  updateHdrOffset();
+  window.addEventListener('resize', updateHdrOffset);
   setStatus('','—');
 
   // If we have transactions and prices are stale (>5 min) — refresh
