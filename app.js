@@ -25,6 +25,7 @@ const CRYPTOS = [
 ];
 
 const CASHES = [
+  {sym:'RUB', name:'Российский рубль'},
   {sym:'USD', name:'Доллар США'},
   {sym:'EUR', name:'Евро'},
   {sym:'CNY', name:'Китайский юань'},
@@ -45,6 +46,7 @@ const S = {
   prices: {},          // {SYM: {usd, ch24, ts}}
   usdRub: null,
   tab:    'pf',
+  anaPeriod: 6,
   form: {op:'buy', type:'crypto', sym:'', name:'', geckoId:''},
 };
 const charts = {};
@@ -127,8 +129,12 @@ async function fetchRates() {
   // Currency prices as USD equivalent of 1 unit
   const syms = [...new Set(S.txs.filter(t=>t.type==='cash').map(t=>t.sym))];
   for (const sym of syms) {
-    const rate = d.rates[sym];
-    if (rate) S.prices[sym] = {usd: 1/rate, ch24:0, ts: Date.now()};
+    if (sym === 'RUB') {
+      S.prices['RUB'] = {usd: 1/S.usdRub, ch24:0, ts: Date.now()};
+    } else {
+      const rate = d.rates[sym];
+      if (rate) S.prices[sym] = {usd: 1/rate, ch24:0, ts: Date.now()};
+    }
   }
 }
 
@@ -144,39 +150,59 @@ function setStatus(mode, txt) {
 function calcHoldings() {
   const sorted = [...S.txs].sort((a,b)=>new Date(a.date)-new Date(b.date));
   const map = {};
+  const rub = S.usdRub || 90;
   for (const tx of sorted) {
-    if (!map[tx.sym]) map[tx.sym] = {sym:tx.sym, name:tx.name, type:tx.type, geckoId:tx.geckoId||null, qty:0, costUsd:0};
+    if (!map[tx.sym]) map[tx.sym] = {sym:tx.sym, name:tx.name, type:tx.type, geckoId:tx.geckoId||null, qty:0, costUsd:0, costRub:0};
     const h = map[tx.sym];
-    if (tx.op==='buy')  { h.qty+=tx.qty; h.costUsd+=tx.qty*tx.priceUsd; }
-    else {
+    if (tx.op==='buy') {
+      h.qty += tx.qty;
+      h.costUsd += tx.qty * tx.priceUsd;
+      // For cash: accumulate RUB cost basis (stored priceRub, or fall back to priceUsd * current rate)
+      if (tx.type === 'cash') h.costRub += tx.qty * (tx.priceRub ?? tx.priceUsd * rub);
+    } else {
       const avg = h.qty>0 ? h.costUsd/h.qty : 0;
-      h.qty    -= tx.qty;
-      h.costUsd -= avg*tx.qty;
-      if (h.qty<1e-9){ h.qty=0; h.costUsd=0; }
+      const avgRub = h.qty>0 && h.costRub>0 ? h.costRub/h.qty : 0;
+      h.qty -= tx.qty;
+      h.costUsd -= avg * tx.qty;
+      h.costRub -= avgRub * tx.qty;
+      if (h.qty<1e-9){ h.qty=0; h.costUsd=0; h.costRub=0; }
     }
   }
-  const rub = S.usdRub || 90;
   return Object.values(map)
     .filter(h=>h.qty>1e-9)
     .map(h=>{
       const pi  = S.prices[h.sym];
       const cup = pi?.usd ?? null;
       const cvu = cup!==null ? h.qty*cup : null;
-      const pnlU= cvu!==null ? cvu-h.costUsd : null;
-      const pct = h.costUsd>0 && pnlU!==null ? (pnlU/h.costUsd)*100 : null;
-      return {...h, avgUsd: h.qty>0?h.costUsd/h.qty:0, cup, cvu, cvR: cvu!==null?cvu*rub:null,
-        costR: h.costUsd*rub, pnlU, pnlR: pnlU!==null?pnlU*rub:null, pct, ch24: pi?.ch24||0};
+      const cvR = cvu!==null ? cvu*rub : null;
+
+      let pnlR, pnlU, pct, costR;
+      if (h.type === 'cash' && h.costRub > 0 && cvR !== null) {
+        // P&L in RUB for cash assets (correct: compares historical RUB cost vs current RUB value)
+        costR = h.costRub;
+        pnlR  = cvR - costR;
+        pct   = (pnlR / costR) * 100;
+        pnlU  = pnlR / rub;
+      } else {
+        costR = h.costUsd * rub;
+        pnlU  = cvu!==null ? cvu-h.costUsd : null;
+        pct   = h.costUsd>0 && pnlU!==null ? (pnlU/h.costUsd)*100 : null;
+        pnlR  = pnlU!==null ? pnlU*rub : null;
+      }
+
+      const avgRub = h.costRub>0 && h.qty>0 ? h.costRub/h.qty : null;
+      return {...h, avgUsd: h.qty>0?h.costUsd/h.qty:0, avgRub, cup, cvu, cvR, costR, pnlU, pnlR, pct, ch24: pi?.ch24||0};
     })
     .sort((a,b)=>(b.cvu??0)-(a.cvu??0));
 }
 
 function calcStats(hs) {
   const rub = S.usdRub||90;
-  let valU=0, costU=0;
-  for (const h of hs){ if (h.cvu!==null) valU+=h.cvu; costU+=h.costUsd; }
-  const pnlU = valU-costU;
-  const pct  = costU>0 ? (pnlU/costU)*100 : 0;
-  return {valR:valU*rub, valU, costR:costU*rub, pnlR:pnlU*rub, pnlU, pct, rub};
+  let valR=0, costR_total=0;
+  for (const h of hs){ if (h.cvR!==null) valR+=h.cvR; costR_total+=h.costR; }
+  const pnlR = valR - costR_total;
+  const pct  = costR_total>0 ? (pnlR/costR_total)*100 : 0;
+  return {valR, valU:valR/rub, costR:costR_total, pnlR, pnlU:pnlR/rub, pct, rub};
 }
 
 // ════════════════════════════════════════════
@@ -301,7 +327,7 @@ function renderAst(hs) {
     <div class="asset-row">
       <div class="ai ${h.type}">${h.sym.slice(0,3)}</div>
       <div class="ai-info"><div class="ai-name">${h.name}</div>
-        <div class="ai-sub">${fQ(h.qty,h.sym)} · ср. ${fU(h.avgUsd)}
+        <div class="ai-sub">${fQ(h.qty,h.sym)} · ср. ${h.type==='cash'&&h.avgRub!=null?fR(h.avgRub):fU(h.avgUsd)}
           ${h.ch24?' · <span style="color:'+( h.ch24>=0?'var(--gain)':'var(--loss)')+'">'+fP(h.ch24)+' 24ч</span>':''}
         </div></div>
       <div class="ai-r"><div class="ai-val">${fR(h.cvR)}</div>
@@ -336,6 +362,87 @@ function renderTx() {
     </div>`).join('');
 }
 
+// ─── PORTFOLIO DYNAMICS ───
+function calcPortfolioHistory(periodMonths) {
+  if (!S.txs.length) return { labels: [], values: [], pct: null };
+  const rub = S.usdRub || 90;
+  const now = new Date();
+  now.setHours(23, 59, 59, 999);
+  const periodMs = periodMonths * 30 * 24 * 60 * 60 * 1000;
+  const periodStart = new Date(now.getTime() - periodMs);
+  const sorted = [...S.txs].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const firstDate = new Date(sorted[0].date);
+  const effectiveStart = firstDate > periodStart ? firstDate : periodStart;
+
+  // Price timeline per asset: transaction prices + current price as endpoints
+  const assetPrices = {};
+  for (const tx of sorted) {
+    if (!assetPrices[tx.sym]) assetPrices[tx.sym] = [];
+    const txDate = new Date(tx.date);
+    if (!assetPrices[tx.sym].find(p => p.date.getTime() === txDate.getTime()))
+      assetPrices[tx.sym].push({ date: txDate, price: tx.priceUsd });
+  }
+  for (const sym of Object.keys(assetPrices)) {
+    if (S.prices[sym]?.usd) assetPrices[sym].push({ date: new Date(now), price: S.prices[sym].usd });
+    assetPrices[sym].sort((a, b) => a.date - b.date);
+  }
+
+  function getPriceAt(sym, date) {
+    const prices = assetPrices[sym];
+    if (!prices?.length) return null;
+    let prev = null;
+    for (const p of prices) {
+      if (p.date <= date) { prev = p; continue; }
+      if (!prev) return p.price;
+      const t = (date - prev.date) / (p.date - prev.date);
+      return prev.price + t * (p.price - prev.price);
+    }
+    return prev?.price ?? null;
+  }
+
+  function getValueAt(date) {
+    const holdings = {};
+    for (const tx of sorted) {
+      if (new Date(tx.date) > date) break;
+      if (!holdings[tx.sym]) holdings[tx.sym] = 0;
+      holdings[tx.sym] += tx.op === 'buy' ? tx.qty : -tx.qty;
+    }
+    let val = 0;
+    for (const [sym, qty] of Object.entries(holdings)) {
+      if (qty <= 1e-9) continue;
+      const price = getPriceAt(sym, date);
+      if (price !== null) val += qty * price * rub;
+    }
+    return val;
+  }
+
+  const totalDays = Math.ceil((now - effectiveStart) / (24 * 60 * 60 * 1000));
+  const step = Math.max(1, Math.floor(totalDays / 60));
+  const labels = [], values = [];
+
+  for (let i = 0; i <= totalDays; i += step) {
+    const date = new Date(effectiveStart.getTime() + i * 24 * 60 * 60 * 1000);
+    if (date > now) break;
+    labels.push(date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }));
+    values.push(Math.round(getValueAt(date)));
+  }
+  const todayLbl = now.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+  if (labels[labels.length - 1] !== todayLbl) {
+    labels.push(todayLbl);
+    values.push(Math.round(getValueAt(now)));
+  }
+
+  const firstNonZero = values.find(v => v > 0) || 0;
+  const lastVal = values[values.length - 1] || 0;
+  const pct = firstNonZero > 0 ? ((lastVal - firstNonZero) / firstNonZero) * 100 : null;
+  return { labels, values, pct };
+}
+
+function setAnaPeriod(m) {
+  S.anaPeriod = m;
+  render();
+}
+
 // ─── ANALYTICS TAB ───
 function renderAna(hs, st) {
   if (!hs.length) return empty('📈','Нет данных','Добавьте сделки для аналитики');
@@ -364,16 +471,96 @@ function renderAna(hs, st) {
       <div class="mc-sub">сумма покупок</div></div>
   </div>`;
 
+  const periods = [1, 3, 6, 12];
+  const dynCard = `<div class="card">
+    <div class="card-ttl" style="justify-content:space-between">
+      Динамика портфеля
+      <div style="display:flex;gap:6px">
+        ${periods.map(m=>`<button class="period-btn${S.anaPeriod===m?' on':''}" onclick="setAnaPeriod(${m})">${m===12?'1Y':m+'M'}</button>`).join('')}
+      </div>
+    </div>
+    <div id="dynPct" class="dyn-pct">—</div>
+    <div id="dynPeriodLbl" class="dyn-period-lbl"></div>
+    <div class="chart-wrap" style="height:280px"><canvas id="dynC"></canvas></div>
+  </div>`;
+
   const barCard = `<div class="card"><div class="card-ttl">P&L по активам</div>
     <div class="chart-wrap"><canvas id="barC"></canvas></div></div>`;
   const pieCard = `<div class="card"><div class="card-ttl">Доля в портфеле</div>
     <div class="chart-wrap"><canvas id="pieC"></canvas></div></div>`;
 
-  return metrics + barCard + pieCard;
+  return metrics + dynCard + barCard + pieCard;
+}
+
+function drawDynChart() {
+  if (charts.dyn) { charts.dyn.destroy(); charts.dyn = null; }
+  const c = document.getElementById('dynC');
+  if (!c) return;
+
+  const { labels, values, pct } = calcPortfolioHistory(S.anaPeriod);
+
+  const pctEl = document.getElementById('dynPct');
+  const lblEl = document.getElementById('dynPeriodLbl');
+  if (pctEl) {
+    if (pct !== null) {
+      pctEl.className = 'dyn-pct' + (pct >= 0 ? '' : ' loss');
+      pctEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2).replace('.', ',') + '%';
+    } else {
+      pctEl.className = 'dyn-pct';
+      pctEl.textContent = '—';
+    }
+  }
+  if (lblEl) {
+    const lbl = { 1:'за 1 месяц', 3:'за 3 месяца', 6:'за 6 месяцев', 12:'за год' }[S.anaPeriod] || '';
+    lblEl.textContent = lbl;
+  }
+  if (!values.length) return;
+
+  charts.dyn = new Chart(c, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: '#7b86f5',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: '#7b86f5',
+        tension: 0.4,
+        fill: true,
+        backgroundColor: ctx => {
+          const grad = ctx.chart.canvas.getContext('2d').createLinearGradient(0, 0, 0, ctx.chart.canvas.height);
+          grad.addColorStop(0, 'rgba(123,134,245,0.45)');
+          grad.addColorStop(1, 'rgba(123,134,245,0.02)');
+          return grad;
+        }
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a0433', borderColor: 'rgba(196,3,97,.45)', borderWidth: 1,
+          titleColor: '#f4eaff', bodyColor: '#c6a8e6', padding: 12, cornerRadius: 10,
+          callbacks: { label: ctx => ` ${fR(ctx.parsed.y)}` },
+          bodyFont: { family: 'JetBrains Mono' }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#c6a8e6', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 }, grid: { color: 'rgba(140,2,134,.12)' } },
+        y: { ticks: { color: '#c6a8e6', font: { family: 'JetBrains Mono', size: 10 }, callback: v => fR(v) }, grid: { color: 'rgba(140,2,134,.12)' } }
+      }
+    }
+  });
 }
 
 function drawAnaCharts(hs, st) {
-  ['bar','pie'].forEach(k=>{ if(charts[k]){charts[k].destroy();charts[k]=null;} });
+  ['bar','pie','dyn'].forEach(k=>{ if(charts[k]){charts[k].destroy();charts[k]=null;} });
+  drawDynChart();
 
   const bar = document.getElementById('barC');
   if (bar && hs.length) {
@@ -468,7 +655,10 @@ function selType(type) {
   document.getElementById('stockIn').style.display   = type==='stock'?'block':'none';
   document.getElementById('cashSel').style.display   = type==='cash'?'block':'none';
   document.getElementById('assetLbl').textContent = type==='crypto'?'Криптовалюта':type==='stock'?'Тикер (Yahoo Finance)':'Валюта';
-  document.getElementById('priceLbl').textContent = 'Цена (USD)';
+  const isCash = type === 'cash';
+  document.getElementById('priceLbl').textContent = isCash ? 'Цена (₽)' : 'Цена (USD)';
+  const totalLbl = document.getElementById('txTotalLbl');
+  if (totalLbl) totalLbl.textContent = isCash ? 'Итого (₽)' : 'Итого (USD)';
   S.form.sym=''; S.form.name=''; S.form.geckoId='';
   document.getElementById('txPrice').value='';
   calcTotal();
@@ -496,8 +686,13 @@ function onCashPick() {
   const c = CASHES.find(x=>x.sym===v);
   if (c) {
     S.form.sym=c.sym; S.form.name=c.name; S.form.geckoId=null;
-    const p = S.prices[c.sym]?.usd;
-    if (p) { document.getElementById('txPrice').value=p.toFixed(4); calcTotal(); }
+    // Show price in RUB: usd_price * usdRub rate
+    const usdPrice = S.prices[c.sym]?.usd;
+    if (usdPrice) {
+      const rubPrice = c.sym === 'RUB' ? 1 : usdPrice * (S.usdRub || 90);
+      document.getElementById('txPrice').value = rubPrice.toFixed(2);
+      calcTotal();
+    }
   }
 }
 
@@ -511,22 +706,27 @@ function submitTx(e) {
   e.preventDefault();
   const {op, type, sym, name, geckoId} = S.form;
   if (!sym) { toast('Выберите актив ⚠️'); return; }
-  const qty   = parseFloat(document.getElementById('txQty').value);
-  const price = parseFloat(document.getElementById('txPrice').value);
-  const date  = document.getElementById('txDate').value;
-  if (!qty||qty<=0)   { toast('Введите количество ⚠️'); return; }
-  if (!price||price<=0){ toast('Введите цену ⚠️'); return; }
-  if (!date)           { toast('Выберите дату ⚠️'); return; }
+  const qty      = parseFloat(document.getElementById('txQty').value);
+  const priceRaw = parseFloat(document.getElementById('txPrice').value);
+  const date     = document.getElementById('txDate').value;
+  if (!qty||qty<=0)      { toast('Введите количество ⚠️'); return; }
+  if (!priceRaw||priceRaw<=0){ toast('Введите цену ⚠️'); return; }
+  if (!date)              { toast('Выберите дату ⚠️'); return; }
+
+  // For cash, user enters price in RUB; convert to USD for internal storage
+  const isCash   = type === 'cash';
+  const priceRub = isCash ? priceRaw : null;
+  const priceUsd = isCash ? priceRaw / (S.usdRub || 90) : priceRaw;
 
   const tx = {
     id: Date.now().toString(36)+Math.random().toString(36).slice(2),
-    op, type, sym, name, geckoId, qty, priceUsd: price, date
+    op, type, sym, name, geckoId, qty, priceUsd, priceRub, date
   };
   S.txs.push(tx);
   saveTx();
 
   // Cache price if not present
-  if (!S.prices[sym]) S.prices[sym]={usd:price, ch24:0, ts:0};
+  if (!S.prices[sym]) S.prices[sym]={usd:priceUsd, ch24:0, ts:0};
 
   closeModal();
   render();
