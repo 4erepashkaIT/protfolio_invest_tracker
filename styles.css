@@ -102,19 +102,12 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding-top: var(--hdr-h, 338px);
 }
 
 /* ═════════ HEADER ═════════ */
 .hdr {
   padding: 28px 56px 0;
   background: linear-gradient(180deg, #0a0117 0%, rgba(10,1,23,.98) 100%);
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-  z-index: 50;
   border-bottom: 1px solid var(--border);
 }
 
@@ -271,10 +264,6 @@ body {
   gap: 4px;
   border-bottom: 1px solid var(--border);
   background: rgba(10,1,23,.95);
-  backdrop-filter: blur(12px);
-  position: sticky;
-  top: var(--hdr-h, 338px);
-  z-index: 40;
 }
 .tab {
   padding: 16px 28px;
