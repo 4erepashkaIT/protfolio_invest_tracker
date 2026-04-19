@@ -57,21 +57,39 @@
       <div class="fg">
         <label class="flbl">Операция</label>
         <div class="tg">
-          <button type="button" class="tb on-buy" id="btn-buy"  onclick="selOp('buy')">📈 Купить</button>
-          <button type="button" class="tb"         id="btn-sell" onclick="selOp('sell')">📉 Продать</button>
+          <button type="button" class="tb on-buy" id="btn-buy"     onclick="selOp('buy')">📈 Купить</button>
+          <button type="button" class="tb"         id="btn-sell"    onclick="selOp('sell')">📉 Продать</button>
+          <button type="button" class="tb"         id="btn-convert" onclick="selOp('convert')">⇄ Конвертация</button>
+          <button type="button" class="tb"         id="btn-futures" onclick="selOp('futures')">⚡ Фьючерс</button>
         </div>
       </div>
 
-      <div class="fg">
+      <!-- Конвертация: из какой валюты -->
+      <div class="fg" id="convertFromFg" style="display:none">
+        <label class="flbl">Из валюты</label>
+        <select class="fs" id="convertFromSel" onchange="onConvertFromPick()"></select>
+        <input class="fi" type="number" id="convertFromAmt" placeholder="Количество (спишется)" step="any" min="0" oninput="calcTotal()" style="margin-top:8px">
+        <div class="form-sep">↓ Конвертировать в</div>
+      </div>
+
+      <!-- Фьючерс: название инструмента -->
+      <div class="fg" id="futuresFg" style="display:none">
+        <label class="flbl">Инструмент</label>
+        <input class="fi" type="text" id="futuresName" placeholder="Напр.: BTC-PERP, ES, GOLD…" oninput="onFuturesName()" autocomplete="off" autocapitalize="characters">
+      </div>
+
+      <!-- Тип актива (скрыт для фьючерсов) -->
+      <div class="fg" id="assetTypeFg">
         <label class="flbl">Тип актива</label>
         <div class="tg3">
-          <button type="button" class="tb on-crypto" id="btn-crypto"  onclick="selType('crypto')">₿ Крипта</button>
-          <button type="button" class="tb"            id="btn-stock"  onclick="selType('stock')">📊 Акция</button>
-          <button type="button" class="tb"            id="btn-cash"   onclick="selType('cash')">💵 Валюта</button>
+          <button type="button" class="tb on-crypto" id="btn-crypto" onclick="selType('crypto')">₿ Крипта</button>
+          <button type="button" class="tb"           id="btn-stock"  onclick="selType('stock')">📊 Акция</button>
+          <button type="button" class="tb"           id="btn-cash"   onclick="selType('cash')">💵 Валюта</button>
         </div>
       </div>
 
-      <div class="fg">
+      <!-- Выбор актива (скрыт для фьючерсов) -->
+      <div class="fg" id="assetPickerFg">
         <label class="flbl" id="assetLbl">Криптовалюта</label>
         <select class="fs" id="cryptoSel" onchange="onCryptoPick()"></select>
         <input  class="fi" id="stockIn"   type="text" placeholder="Тикер: AAPL, SBER.ME, NVDA…" style="display:none" oninput="onStockType()" autocomplete="off" autocorrect="off" autocapitalize="characters">
@@ -83,7 +101,8 @@
         <input class="fi" type="date" id="txDate">
       </div>
 
-      <div class="frow">
+      <!-- Кол-во + Цена (скрыты для фьючерсов) -->
+      <div class="frow" id="qtyPriceFg">
         <div class="fg">
           <label class="flbl">Количество</label>
           <input class="fi" type="number" id="txQty" placeholder="0.00" step="any" min="0" oninput="calcTotal()">
@@ -92,6 +111,12 @@
           <label class="flbl" id="priceLbl">Цена (USD)</label>
           <input class="fi" type="number" id="txPrice" placeholder="0.00" step="any" min="0" oninput="calcTotal()">
         </div>
+      </div>
+
+      <!-- Фьючерс: результат сделки -->
+      <div class="fg" id="futuresPnlFg" style="display:none">
+        <label class="flbl">Результат сделки (USD)</label>
+        <input class="fi" type="number" id="futuresPnl" placeholder="Прибыль (+) или убыток (−)" step="any" oninput="calcTotal()">
       </div>
 
       <div class="ftotal">
