@@ -174,7 +174,7 @@ function calcHoldings() {
       }
       h.qty     += tx.qty;
       h.costUsd += tx.qty * tx.priceUsd;
-      if (tx.type === 'cash') h.costRub += tx.qty * (tx.priceRub ?? tx.priceUsd * rub);
+      h.costRub += tx.qty * (tx.priceRub ?? tx.priceUsd * rub);
     } else if (tx.op === 'sell') {
       const avg = h.qty>0 ? h.costUsd/h.qty : 0;
       const avgRub = h.qty>0 && h.costRub>0 ? h.costRub/h.qty : 0;
@@ -200,7 +200,7 @@ function calcHoldings() {
         pct   = (pnlR / costR) * 100;
         pnlU  = pnlR / rub;
       } else {
-        costR = h.costUsd * rub;
+        costR = h.costRub > 0 ? h.costRub : h.costUsd * rub;
         pnlU  = cvu!==null ? cvu-h.costUsd : null;
         pct   = h.costUsd>0 && pnlU!==null ? (pnlU/h.costUsd)*100 : null;
         pnlR  = pnlU!==null ? pnlU*rub : null;
@@ -856,7 +856,7 @@ function submitTx(e) {
     if (!qty||qty<=0)       { toast('Введите количество получения ⚠️'); return; }
     if (!priceRaw||priceRaw<=0){ toast('Введите цену ⚠️'); return; }
     const isCash   = type === 'cash';
-    const priceRub = isCash ? priceRaw : null;
+    const priceRub = isCash ? priceRaw : priceRaw * (S.usdRub || 90);
     const priceUsd = isCash ? priceRaw / (S.usdRub || 90) : priceRaw;
     const tx = {
       id: Date.now().toString(36)+Math.random().toString(36).slice(2),
@@ -878,7 +878,7 @@ function submitTx(e) {
   if (!priceRaw||priceRaw<=0){ toast('Введите цену ⚠️'); return; }
 
   const isCash   = type === 'cash';
-  const priceRub = isCash ? priceRaw : null;
+  const priceRub = isCash ? priceRaw : priceRaw * (S.usdRub || 90);
   const priceUsd = isCash ? priceRaw / (S.usdRub || 90) : priceRaw;
 
   const tx = {
