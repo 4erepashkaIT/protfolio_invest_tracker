@@ -213,12 +213,22 @@ function calcHoldings() {
 }
 
 function calcStats(hs) {
-  const rub = S.usdRub||90;
-  let valR=0, costR_total=0;
-  for (const h of hs){ if (h.cvR!==null) valR+=h.cvR; costR_total+=h.costR; }
-  const pnlR = valR - costR_total;
-  const pct  = costR_total>0 ? (pnlR/costR_total)*100 : 0;
-  return {valR, valU:valR/rub, costR:costR_total, pnlR, pnlU:pnlR/rub, pct, rub};
+  const rub = S.usdRub || 90;
+  let valR = 0;
+  for (const h of hs) { if (h.cvR !== null) valR += h.cvR; }
+  // Вложено = рубли потраченные на покупки − рубли полученные с продаж
+  // Конвертации и фьючерсы не учитываются
+  let investedR = 0;
+  for (const tx of S.txs) {
+    if (tx.op === 'buy') {
+      investedR += tx.qty * (tx.priceRub ?? tx.priceUsd * rub);
+    } else if (tx.op === 'sell') {
+      investedR -= tx.qty * (tx.priceRub ?? tx.priceUsd * rub);
+    }
+  }
+  const pnlR = valR - investedR;
+  const pct  = investedR > 0 ? (pnlR / investedR) * 100 : 0;
+  return {valR, valU: valR / rub, costR: investedR, pnlR, pnlU: pnlR / rub, pct, rub};
 }
 
 // ════════════════════════════════════════════
@@ -504,7 +514,8 @@ function renderAna(hs, st) {
   const sorted = [...hs].filter(h=>h.pct!==null);
   const best   = sorted.length ? [...sorted].sort((a,b)=>b.pct-a.pct)[0] : null;
   const worst  = sorted.length ? [...sorted].sort((a,b)=>a.pct-b.pct)[0] : null;
-  const txBuys = S.txs.filter(t=>t.op==='buy'||t.op==='convert').reduce((s,t)=>s+t.qty*t.priceUsd,0)*(S.usdRub||90);
+  const rub = S.usdRub || 90;
+  const txBuys = S.txs.filter(t => t.op === 'buy').reduce((s, t) => s + t.qty * (t.priceRub ?? t.priceUsd * rub), 0);
 
   // Futures stats
   const futsTxs   = S.txs.filter(t => t.type === 'futures');
@@ -512,7 +523,6 @@ function renderAna(hs, st) {
   const futsWins  = futsTxs.filter(t => (t.pnlUsd || 0) > 0).length;
   const futsBest  = futsTxs.reduce((b, t) => (!b || t.pnlUsd > b.pnlUsd) ? t : b, null);
   const futsWorst = futsTxs.reduce((w, t) => (!w || t.pnlUsd < w.pnlUsd) ? t : w, null);
-  const rub = S.usdRub || 90;
 
   const futuresCard = futsTxs.length ? `<div class="card" style="border-color:rgba(6,182,212,.3)">
     <div class="card-ttl" style="color:#06b6d4">⚡ Фьючерсы</div>
