@@ -8,7 +8,7 @@
 
 - **Криптовалюты** — поддержка 20 монет (BTC, ETH, SOL, TON и др.) с ценами от CoinGecko
 - **Акции** — любой тикер с биржи (AAPL, TSLA, SBER и др.) через Yahoo Finance
-- **Наличные** — 8 фиатных валют (USD, EUR, CNY, GBP, AED, TRY, KZT, BYN)
+- **Наличные** — 9 фиатных валют (RUB, USD, EUR, CNY, GBP, AED, TRY, KZT, BYN)
 - **Сделки** — добавление покупок и продаж с указанием даты, количества и цены
 - **P&L-расчёты** — прибыль/убыток, средняя цена покупки, доходность в % по каждой позиции
 - **Аналитика** — диаграммы распределения по активам и типам, доходности
@@ -56,7 +56,7 @@
 | Крипто-цены     | [CoinGecko API](https://www.coingecko.com/api)   |
 | Акции           | Yahoo Finance API (неофициальный)                |
 | Курсы валют     | [ExchangeRate-API](https://www.exchangerate-api.com/) |
-| Сборка          | Отсутствует — приложение в одном HTML-файле      |
+| Сборка          | Отсутствует — 3 файла: index.html, app.js, styles.css |
 
 ---
 
@@ -96,9 +96,9 @@ python3 -m http.server 8080
 | ADA    | Cardano     | NOT    | Notcoin    |
 | AVAX   | Avalanche   | DOT    | Polkadot   |
 
-### Фиатные валюты (8 штук)
+### Фиатные валюты (9 штук)
 
-USD · EUR · CNY · GBP · AED · TRY · KZT · BYN
+RUB · USD · EUR · CNY · GBP · AED · TRY · KZT · BYN
 
 ### Акции
 
@@ -110,22 +110,20 @@ USD · EUR · CNY · GBP · AED · TRY · KZT · BYN
 
 ```
 protfolio_invest_tracker/
-└── index.html          # Всё приложение — один файл (~900 строк)
-    ├── <head>          # Мета-теги, CDN-ссылки на Chart.js и шрифты
-    ├── <style>         # CSS (~280 строк) — тёмная тема, адаптив
-    ├── <body>          # Разметка: шапка, табы, модалка, тост
-    └── <script>        # JavaScript (~580 строк) — вся логика
-        ├── CONSTANTS   # Списки CRYPTOS, CASHES, COLORS
-        ├── STATE       # Объект S — транзакции, цены, активный таб
-        ├── STORAGE     # load() / saveTx() / savePrices()
-        ├── PRICE FETCH # doRefresh(), fetchCrypto(), fetchStocks(), fetchRates()
-        ├── CALC        # calcHoldings(), calcStats()
-        ├── FORMAT      # Функции форматирования чисел, дат
-        ├── RENDER      # render() → renderPf / renderAst / renderTx / renderAna
-        ├── CHARTS      # Chart.js: donut, bar, pie
-        ├── MODAL/FORM  # switchTab(), openModal(), buildSymList()
-        ├── SUBMIT      # submitTx(), delTx()
-        └── EXPORT/INIT # exportCsv(), toast(), init()
+├── index.html          # HTML-разметка (~135 строк): шапка, табы, модалка, тост
+├── app.js              # JavaScript-логика (~970 строк)
+│   ├── CONSTANTS       # Списки CRYPTOS, CASHES, COLORS
+│   ├── STATE           # Объект S — транзакции, цены, активный таб
+│   ├── STORAGE         # load() / saveTx() / savePrices()
+│   ├── PRICE FETCH     # doRefresh(), fetchCrypto(), fetchStocks(), fetchRates()
+│   ├── CALC            # calcHoldings(), calcStats()
+│   ├── FORMAT          # Функции форматирования чисел, дат
+│   ├── RENDER          # render() → renderPf / renderAst / renderTx / renderAna
+│   ├── CHARTS          # Chart.js: donut, line, bar, pie
+│   ├── MODAL/FORM      # openModal(), selOp(), selType(), calcTotal()
+│   ├── SUBMIT          # submitTx(), delTx()
+│   └── EXPORT/INIT     # doExport(), toast(), init()
+└── styles.css          # CSS-стили (~995 строк) — тёмная тема, адаптив
 ```
 
 ---
@@ -143,15 +141,17 @@ protfolio_invest_tracker/
 - P&L в USD и RUB с иконкой тренда
 
 ### Сделки (Transactions)
-- Хронологический список всех транзакций
-- Фильтр по типу (всё / покупка / продажа)
+- Хронологический список всех транзакций, сгруппированных по дате
+- Поддержка покупок, продаж, конвертаций и фьючерсных P&L-записей
 - Удаление отдельных сделок
 - Кнопка экспорта CSV
 
 ### Аналитика (Analytics)
-- Donut-диаграмма распределения по активам
-- Donut-диаграмма по типам (Крипто / Акции / Наличные)
-- Горизонтальный bar-chart доходности по позициям
+- Сводные метрики: лучшая/худшая позиция, ROI, вложено
+- Блок статистики по фьючерсам (при наличии сделок)
+- Line-chart динамики портфеля (1М / 3М / 6М / 1Y)
+- Bar-chart P&L по каждому активу
+- Donut-диаграмма долей в портфеле
 
 ---
 
